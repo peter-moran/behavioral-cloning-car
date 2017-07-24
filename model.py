@@ -98,17 +98,18 @@ if __name__ == '__main__':
     samples_train, samples_validation = train_test_split(simulator_samples, test_size=0.3)
 
     # Set up generators
-    train_generator = feature_label_generator(samples_train, batch_size=32)
-    validation_generator = feature_label_generator(samples_validation, batch_size=32)
+    BATCH_SIZE = 32
+    train_generator = feature_label_generator(samples_train, batch_size=BATCH_SIZE)
+    validation_generator = feature_label_generator(samples_validation, batch_size=BATCH_SIZE)
 
     # Train keras model
     model = create_model()
     model.summary()
     model.compile(optimizer='adam', loss='mse')
     losses = model.fit_generator(train_generator,
-                                 steps_per_epoch=len(samples_train),
+                                 steps_per_epoch=len(samples_train)/BATCH_SIZE,
                                  validation_data=validation_generator,
-                                 validation_steps=len(samples_validation),
+                                 validation_steps=len(samples_validation)/BATCH_SIZE,
                                  epochs=10)
     model.save('model.h5')
 
