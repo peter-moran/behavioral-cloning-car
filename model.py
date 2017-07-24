@@ -1,14 +1,15 @@
 import csv
+
 import numpy as np
-from matplotlib.image import imread
-from matplotlib import pyplot as plt
-from keras.models import Sequential
-from keras.layers.convolutional import Conv2D, Cropping2D
-from keras.layers import Lambda, MaxPooling2D, Flatten, Dense
-from keras import backend as K
 import tensorflow as tf
-from sklearn.utils import shuffle
+from keras import backend as K
+from keras.layers import Lambda, MaxPooling2D, Flatten, Dense
+from keras.layers.convolutional import Conv2D, Cropping2D
+from keras.models import Sequential
+from matplotlib import pyplot as plt
+from matplotlib.image import imread
 from sklearn.model_selection import train_test_split
+from sklearn.utils import shuffle
 
 # Fix tf bug
 K.clear_session()
@@ -59,12 +60,18 @@ class VirtualSet:
         simulation measurements. This will be the raw data for the training, validation, or test set.
         :param batch_size: Number of samples to pass to the network each call to the generator function.
         """
+        # Handle samples
         self.raw_samples = sample_set
         self.n_raw_samples = len(self.raw_samples)
-        self.batch_size = batch_size
+
+        # Handle augmentation
+        self.side_cam_correction = 0.2
         self.n_samples = self.n_raw_samples
         if augment:
-            self.n_samples *= 2
+            self.n_samples *= 4
+
+        # Batches
+        self.batch_size = batch_size
         self.n_batches = self.n_samples / self.batch_size
 
     def generator_func(self):
@@ -78,18 +85,25 @@ class VirtualSet:
             for offset in range(0, self.n_samples, self.batch_size):
                 features = []
                 labels = []
-                for ndx in arg_shuffle[offset:offset+self.batch_size]:
+                for ndx in arg_shuffle[offset:offset + self.batch_size]:
                     sample = self.raw_samples[ndx % self.n_raw_samples]
-                    image = imread(sample['img_center'])
-                    angle = sample['angle']
-                    if ndx < self.n_raw_samples:
+                    case = ndx // self.n_raw_samples
+                    if case == 0:
                         # Use sample as is
-                        features.append(image)
-                        labels.append(angle)
-                    elif ndx >= self.n_raw_samples:
-                        # Augment sample
-                        features.append(np.fliplr(image))
-                        labels.append(-angle)
+                        features.append(imread(sample['img_center']))
+                        labels.append(sample['angle'])
+                    elif case == 1:
+                        # Augment sample with reflection
+                        features.append(np.fliplr(imread(sample['img_center'])))
+                        labels.append(-sample['angle'])
+                    elif case == 2:
+                        # Augment with left camera, correcting to right
+                        features.append(imread(sample['img_left']))
+                        labels.append(sample['angle'] + self.side_cam_correction)
+                    elif case == 3:
+                        # Augment with right camera, correcting to left
+                        features.append(imread(sample['img_right']))
+                        labels.append(sample['angle'] - self.side_cam_correction)
                 yield np.array(features), np.array(labels)
 
 
@@ -127,6 +141,10 @@ if __name__ == '__main__':
     validation_set = VirtualSet(samples_validation, batch_size=32)
     validation_generator = validation_set.generator_func()
 
+    # Print a data summary
+    print("\nTraining samples (including augmentation) {}".format(train_set.n_samples))
+    print("Validation samples {}".format(validation_set.n_samples))
+
     # Train keras model
     model = create_model()
     model.summary()
@@ -135,10 +153,10 @@ if __name__ == '__main__':
                                  steps_per_epoch=train_set.n_batches,
                                  validation_data=validation_generator,
                                  validation_steps=validation_set.n_batches,
+                                 verbose=2,
                                  epochs=6)
     model.save('model.h5')
 
     # Plot loss
     plot_history(losses)
-    plt.ylim([0, .005])
     plt.show()
