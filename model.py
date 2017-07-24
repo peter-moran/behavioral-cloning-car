@@ -9,6 +9,7 @@ from keras import backend as K
 import tensorflow as tf
 from sklearn.utils import shuffle
 from sklearn.model_selection import train_test_split
+from random import randint
 
 # Fix tf bug
 K.clear_session()
@@ -48,25 +49,35 @@ def plot_history(losses):
     plt.xlabel('epoch')
     plt.legend(['training set', 'validation set'], loc='upper right')
 
+class VirtualSet:
+    def __init__(self, sample_set, batch_size):
+        """
+        Acts as an interface to both real sampled data and augmented data for datasets passed through the network
+        (ie training set, validation set, etc.)
 
-def feature_label_generator(samples, batch_size=32):
-    """
-    Generator used to load images in batches as they are passed to the network, rather than
-    loading them into memory all at once.
-    :param samples: a dictionary containing image files and simulation measurements.
-    :param batch_size:
-    :return:
-    """
-    num_samples = len(samples)
-    while True:
-        shuffle(samples)
-        for batch_start in range(0, num_samples, batch_size):
-            batch = samples[batch_start:batch_start+batch_size]
+        :param sample_set: A dictionary created by `read_sim_log()` containing file paths to sampled images and
+        simulation measurements. This will be the raw data for the training, validation, or test set.
+        :param batch_size: Number of samples to pass to the network each call to the generator function.
+        """
+        self.samples = sample_set
+        self.batch_size = batch_size
+        self.n_batches = len(self.samples) / self.batch_size
 
-            features = np.array([imread(sample['img_center']) for sample in batch])
-            labels = np.array([sample['angle'] for sample in batch])
+    def generator_func(self):
+        """
+        Generator used to load images in batches as they are passed to the network, rather than
+        loading them into memory all at once.
+        :return: features and associated labels, ready to be passed to the network.
+        """
+        while True:
+            shuffle(self.samples)
+            for batch_start in range(0, len(self.samples), self.batch_size):
+                batch = self.samples[batch_start:batch_start + self.batch_size]
 
-            yield features, labels
+                features = np.array([imread(sample['img_center']) for sample in batch])
+                labels = np.array([sample['angle'] for sample in batch])
+
+                yield features, labels
 
 
 def create_model():
@@ -98,25 +109,23 @@ if __name__ == '__main__':
     samples_train, samples_validation = train_test_split(simulator_samples, test_size=0.3)
 
     # Set up generators
-    BATCH_SIZE = 32
-    train_generator = feature_label_generator(samples_train, batch_size=BATCH_SIZE)
-    validation_generator = feature_label_generator(samples_validation, batch_size=BATCH_SIZE)
+    train_set = VirtualSet(samples_train, batch_size=32)
+    train_generator = train_set.generator_func()
+    validation_set = VirtualSet(samples_validation, batch_size=32)
+    validation_generator = validation_set.generator_func()
 
     # Train keras model
     model = create_model()
     model.summary()
     model.compile(optimizer='adam', loss='mse')
     losses = model.fit_generator(train_generator,
-                                 steps_per_epoch=len(samples_train)/BATCH_SIZE,
+                                 steps_per_epoch=train_set.n_batches,
                                  validation_data=validation_generator,
-                                 validation_steps=len(samples_validation)/BATCH_SIZE,
+                                 validation_steps=validation_set.n_batches,
                                  epochs=10)
     model.save('model.h5')
 
     # Plot loss
-    plt.figure()
-    plot_history(losses)
-    plt.figure()
     plot_history(losses)
     plt.ylim([0,.005])
     plt.show()
