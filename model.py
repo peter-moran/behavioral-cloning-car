@@ -91,40 +91,49 @@ class VirtualSet:
                 yield np.array(features), np.array(labels)
 
 
-def create_model(dropout_rate=0.5, l2_weight=.01):
+def create_model(dropout_rate=0.5, l2_weight=None, batch_norm=False):
     model = Sequential()
+    if l2_weight is None:
+        L2_reg = None
+    else:
+        L2_reg = l2(l2_weight)
 
     # Pre-processing
     model.add(Lambda(lambda x: x / 255.0 - 0.5, input_shape=(160, 320, 3)))
     model.add(Cropping2D(cropping=((70, 25), (0, 0))))
 
     # VGG inspired structure
-    model.add(Conv2D(64, (5, 5), padding='same', kernel_regularizer=l2(l2_weight)))
-    model.add(BatchNormalization())
+    model.add(Conv2D(64, (5, 5), padding='same', kernel_regularizer=L2_reg))
+    if batch_norm:
+        model.add(BatchNormalization())
     model.add(Activation('relu'))
     model.add(Dropout(dropout_rate))
     model.add(MaxPooling2D(pool_size=(3, 3)))
 
-    model.add(Conv2D(128, (5, 5), padding='same', kernel_regularizer=l2(l2_weight)))
-    model.add(BatchNormalization())
+    model.add(Conv2D(128, (5, 5), padding='same', kernel_regularizer=L2_reg))
+    if batch_norm:
+        model.add(BatchNormalization())
     model.add(Activation('relu'))
     model.add(Dropout(dropout_rate))
     model.add(MaxPooling2D(pool_size=(3, 3)))
 
-    model.add(Conv2D(256, (5, 5), padding='same', kernel_regularizer=l2(l2_weight)))
-    model.add(BatchNormalization())
+    model.add(Conv2D(256, (5, 5), padding='same', kernel_regularizer=L2_reg))
+    if batch_norm:
+        model.add(BatchNormalization())
     model.add(Activation('relu'))
     model.add(Dropout(dropout_rate))
     model.add(MaxPooling2D(pool_size=(3, 3)))
     model.add(Flatten())
 
-    model.add(Dense(512, kernel_regularizer=l2(l2_weight)))
-    model.add(BatchNormalization())
+    model.add(Dense(512, kernel_regularizer=L2_reg))
+    if batch_norm:
+        model.add(BatchNormalization())
     model.add(Activation('relu'))
     model.add(Dropout(dropout_rate))
 
-    model.add(Dense(128, kernel_regularizer=l2(l2_weight)))
-    model.add(BatchNormalization())
+    model.add(Dense(128, kernel_regularizer=L2_reg))
+    if batch_norm:
+        model.add(BatchNormalization())
     model.add(Activation('relu'))
     model.add(Dropout(dropout_rate))
 
@@ -135,9 +144,10 @@ def create_model(dropout_rate=0.5, l2_weight=.01):
 if __name__ == '__main__':
     # Hyperparameters
     SIDECAM_OFFSET = 0.2
+    L2_WEIGHT = None
+    BATCH_NORM = False
     DROPOUT = 0.5
-    L2_WEIGHT = 0.01
-    BATCH_SIZE = 16
+    BATCH_SIZE = 32
 
     # Read in samples
     simulator_samples = read_sim_logs(simulation_logs)
@@ -153,15 +163,15 @@ if __name__ == '__main__':
     validation_generator = validation_set.generator_func()
 
     # Print a data summary
-    print("\nTraining samples {:,}".format(train_set.n_samples))
-    print("Validation samples {:,}".format(validation_set.n_samples))
+    print("\nTraining samples {:<14,}".format(train_set.n_samples))
+    print("Validation samples {:<16,}".format(validation_set.n_samples))
 
     # Train keras model
-    model = create_model(dropout_rate=DROPOUT, l2_weight=L2_WEIGHT)
+    model = create_model(dropout_rate=DROPOUT, l2_weight=L2_WEIGHT, batch_norm=False)
     model.summary()
     model.compile(optimizer='adam', loss='mse')
     early_stopping = EarlyStopping(monitor='val_loss', min_delta=0.01, patience=2)
-    checkpointer = ModelCheckpoint(filepath='model.h5', verbose=1, save_best_only=True)
+    checkpointer = ModelCheckpoint(filepath='./model_archive/model-{val_loss:.2f}.h5', verbose=1, save_best_only=True)
     losses = model.fit_generator(train_generator,
                                  steps_per_epoch=train_set.n_batches,
                                  validation_data=validation_generator,
@@ -169,6 +179,7 @@ if __name__ == '__main__':
                                  verbose=2,
                                  epochs=10,
                                  callbacks=[early_stopping, checkpointer])
+    model.save('model.h5')
 
     # Plot loss
     plot_history(losses)
