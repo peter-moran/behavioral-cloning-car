@@ -1,31 +1,31 @@
-import csv
-
 import numpy as np
 import tensorflow as tf
-from keras import backend as K
-from keras.layers import Lambda, MaxPooling2D, Flatten, Dense
+from keras import backend as ktf
+from keras.layers import Lambda, MaxPooling2D, Flatten, Dense, Dropout
 from keras.layers.convolutional import Conv2D, Cropping2D
 from keras.models import Sequential
+from keras.regularizers import l2
 from matplotlib import pyplot as plt
 from matplotlib.image import imread
 from sklearn.model_selection import train_test_split
 from sklearn.utils import shuffle
+
 from simulator_reader import read_sim_logs
 
 # Fix tf bug
-K.clear_session()
+ktf.clear_session()
 config = tf.ConfigProto()
 config.gpu_options.allow_growth = True
 session = tf.Session(config=config)
-K.set_session(session)
+ktf.set_session(session)
 
 # Options
-simulation_logs = ['./data/t1_forward/driving_log.csv']
+simulation_logs = ['./data/t1_forward/driving_log.csv', './data/t2_forward/driving_log.csv']
 
 
-def plot_history(losses):
-    plt.plot(losses.history['loss'])
-    plt.plot(losses.history['val_loss'])
+def plot_history(fit_loss):
+    plt.plot(fit_loss.history['loss'])
+    plt.plot(fit_loss.history['val_loss'])
     plt.title('model mean squared error loss')
     plt.ylabel('mean squared error loss')
     plt.xlabel('epoch')
@@ -33,7 +33,7 @@ def plot_history(losses):
 
 
 class VirtualSet:
-    def __init__(self, sample_set, batch_size, augment=False):
+    def __init__(self, sample_set, batch_size, augment=False, sidecam_angl_offfset=0.15):
         """
         Acts as an interface to both real sampled data and augmented data for datasets passed through the network
         (ie training set, validation set, etc.)
@@ -47,7 +47,7 @@ class VirtualSet:
         self.n_raw_samples = len(self.raw_samples)
 
         # Handle augmentation
-        self.side_cam_correction = 0.2
+        self.sidecam_angl_offfset = sidecam_angl_offfset
         self.n_samples = self.n_raw_samples
         if augment:
             self.n_samples *= 4
@@ -81,15 +81,15 @@ class VirtualSet:
                     elif case == 2:
                         # Augment with left camera, correcting to right
                         features.append(imread(sample['img_left']))
-                        labels.append(sample['angle'] + self.side_cam_correction)
+                        labels.append(sample['angle'] + self.sidecam_angl_offfset)
                     elif case == 3:
                         # Augment with right camera, correcting to left
                         features.append(imread(sample['img_right']))
-                        labels.append(sample['angle'] - self.side_cam_correction)
+                        labels.append(sample['angle'] - self.sidecam_angl_offfset)
                 yield np.array(features), np.array(labels)
 
 
-def create_model():
+def create_model(dropout_rate=0.5, l2_weight=.01):
     model = Sequential()
 
     # Pre-processing
@@ -97,20 +97,30 @@ def create_model():
     model.add(Cropping2D(cropping=((70, 25), (0, 0))))
 
     # VGG inspired structure
-    model.add(Conv2D(64, (5, 5), padding='same', activation='relu'))
+    model.add(Conv2D(64, (5, 5), padding='same', kernel_regularizer=l2(l2_weight), activation='relu'))
+    model.add(Dropout(dropout_rate))
     model.add(MaxPooling2D(pool_size=(3, 3)))
-    model.add(Conv2D(128, (5, 5), padding='same', activation='relu'))
+    model.add(Conv2D(128, (5, 5), padding='same', kernel_regularizer=l2(l2_weight), activation='relu'))
+    model.add(Dropout(dropout_rate))
     model.add(MaxPooling2D(pool_size=(3, 3)))
-    model.add(Conv2D(256, (5, 5), padding='same', activation='relu'))
+    model.add(Conv2D(256, (5, 5), padding='same', kernel_regularizer=l2(l2_weight), activation='relu'))
+    model.add(Dropout(dropout_rate))
     model.add(MaxPooling2D(pool_size=(3, 3)))
     model.add(Flatten())
-    model.add(Dense(512, activation='relu'))
-    model.add(Dense(128, activation='relu'))
+    model.add(Dense(512, kernel_regularizer=l2(l2_weight), activation='relu'))
+    model.add(Dropout(dropout_rate))
+    model.add(Dense(128, kernel_regularizer=l2(l2_weight), activation='relu'))
+    model.add(Dropout(dropout_rate))
     model.add(Dense(1))
     return model
 
 
 if __name__ == '__main__':
+    # Hyperparameters
+    SIDECAM_OFFSET = 0.1
+    DROPOUT = 0.5
+    L2_WEIGHT = 0.01
+
     # Read in samples
     simulator_samples = read_sim_logs(simulation_logs)
 
@@ -118,17 +128,19 @@ if __name__ == '__main__':
     samples_train, samples_validation = train_test_split(simulator_samples, test_size=0.3)
 
     # Set up generators
-    train_set = VirtualSet(samples_train, batch_size=32, augment=True)
+    BATCH_SIZE = 32
+    train_set = VirtualSet(samples_train, batch_size=BATCH_SIZE,
+                           augment=True, sidecam_angl_offfset=SIDECAM_OFFSET)
     train_generator = train_set.generator_func()
-    validation_set = VirtualSet(samples_validation, batch_size=32)
+    validation_set = VirtualSet(samples_validation, batch_size=BATCH_SIZE)
     validation_generator = validation_set.generator_func()
 
     # Print a data summary
-    print("\nTraining samples (including augmentation) {}".format(train_set.n_samples))
-    print("Validation samples {}".format(validation_set.n_samples))
+    print("\nTraining samples {:,}".format(train_set.n_samples))
+    print("Validation samples {:,}".format(validation_set.n_samples))
 
     # Train keras model
-    model = create_model()
+    model = create_model(dropout_rate=DROPOUT, l2_weight=L2_WEIGHT)
     model.summary()
     model.compile(optimizer='adam', loss='mse')
     losses = model.fit_generator(train_generator,
@@ -136,9 +148,10 @@ if __name__ == '__main__':
                                  validation_data=validation_generator,
                                  validation_steps=validation_set.n_batches,
                                  verbose=2,
-                                 epochs=6)
+                                 epochs=10)
     model.save('model.h5')
 
     # Plot loss
     plot_history(losses)
+    plt.ylim([0, 0.15])
     plt.show()
