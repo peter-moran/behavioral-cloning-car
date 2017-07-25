@@ -22,7 +22,8 @@ session = tf.Session(config=config)
 ktf.set_session(session)
 
 # Options
-simulation_logs = ['./data/t1_forward/driving_log.csv', './data/t2_forward/driving_log.csv']
+simulation_logs = ['./data/t1_forward/driving_log.csv', './data/t2_forward/driving_log.csv',
+                   './data/t1_backward/driving_log.csv']
 
 
 def plot_history(fit_loss):
@@ -91,7 +92,7 @@ class VirtualSet:
                 yield np.array(features), np.array(labels)
 
 
-def create_model(dropout_rate=0.5, l2_weight=None, batch_norm=False):
+def create_model(dropout_rate=None, l2_weight=None, batch_norm=False):
     model = Sequential()
     if l2_weight is None:
         L2_reg = None
@@ -107,21 +108,24 @@ def create_model(dropout_rate=0.5, l2_weight=None, batch_norm=False):
     if batch_norm:
         model.add(BatchNormalization())
     model.add(Activation('relu'))
-    model.add(Dropout(dropout_rate))
+    if dropout_rate is not None:
+        model.add(Dropout(dropout_rate))
     model.add(MaxPooling2D(pool_size=(3, 3)))
 
     model.add(Conv2D(128, (5, 5), padding='same', kernel_regularizer=L2_reg))
     if batch_norm:
         model.add(BatchNormalization())
     model.add(Activation('relu'))
-    model.add(Dropout(dropout_rate))
+    if dropout_rate is not None:
+        model.add(Dropout(dropout_rate))
     model.add(MaxPooling2D(pool_size=(3, 3)))
 
     model.add(Conv2D(256, (5, 5), padding='same', kernel_regularizer=L2_reg))
     if batch_norm:
         model.add(BatchNormalization())
     model.add(Activation('relu'))
-    model.add(Dropout(dropout_rate))
+    if dropout_rate is not None:
+        model.add(Dropout(dropout_rate))
     model.add(MaxPooling2D(pool_size=(3, 3)))
     model.add(Flatten())
 
@@ -129,31 +133,37 @@ def create_model(dropout_rate=0.5, l2_weight=None, batch_norm=False):
     if batch_norm:
         model.add(BatchNormalization())
     model.add(Activation('relu'))
-    model.add(Dropout(dropout_rate))
+    if dropout_rate is not None:
+        model.add(Dropout(dropout_rate))
 
     model.add(Dense(128, kernel_regularizer=L2_reg))
     if batch_norm:
         model.add(BatchNormalization())
     model.add(Activation('relu'))
-    model.add(Dropout(dropout_rate))
+    if dropout_rate is not None:
+        model.add(Dropout(dropout_rate))
 
     model.add(Dense(1))
     return model
 
 
 if __name__ == '__main__':
-    # Hyperparameters
+    ## Hyperparameters
+    # Augmentation
     SIDECAM_OFFSET = 0.2
+    VALIDATION_SPLIT = 0.4
+    # Model
+    DROPOUT = None
     L2_WEIGHT = None
     BATCH_NORM = False
-    DROPOUT = 0.5
+    # Testing
     BATCH_SIZE = 32
 
     # Read in samples
     simulator_samples = read_sim_logs(simulation_logs)
 
     # Split samples into train / test sets
-    samples_train, samples_validation = train_test_split(simulator_samples, test_size=0.3)
+    samples_train, samples_validation = train_test_split(simulator_samples, test_size=VALIDATION_SPLIT)
 
     # Set up generators
     train_set = VirtualSet(samples_train, batch_size=BATCH_SIZE,
@@ -163,11 +173,11 @@ if __name__ == '__main__':
     validation_generator = validation_set.generator_func()
 
     # Print a data summary
-    print("\nTraining samples {:<14,}".format(train_set.n_samples))
-    print("Validation samples {:<16,}".format(validation_set.n_samples))
+    print("\nTraining samples {:>14,}".format(train_set.n_samples))
+    print("Validation samples {:>16,}".format(validation_set.n_samples))
 
     # Train keras model
-    model = create_model(dropout_rate=DROPOUT, l2_weight=L2_WEIGHT, batch_norm=False)
+    model = create_model(dropout_rate=DROPOUT, l2_weight=L2_WEIGHT, batch_norm=BATCH_NORM)
     model.summary()
     model.compile(optimizer='adam', loss='mse')
     early_stopping = EarlyStopping(monitor='val_loss', min_delta=0.01, patience=2)
@@ -179,7 +189,6 @@ if __name__ == '__main__':
                                  verbose=2,
                                  epochs=10,
                                  callbacks=[early_stopping, checkpointer])
-    model.save('model.h5')
 
     # Plot loss
     plot_history(losses)
