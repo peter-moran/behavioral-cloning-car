@@ -23,7 +23,7 @@ ktf.set_session(session)
 
 # Options
 simulation_logs = ['./data/t1_forward/driving_log.csv', './data/t2_forward/driving_log.csv',
-                   './data/t1_backward/driving_log.csv']
+                   './data/t1_backwards/driving_log.csv']
 
 
 def plot_history(fit_loss):
@@ -148,7 +148,6 @@ def create_model(dropout_rate=None, l2_weight=None, batch_norm=False):
 
 
 if __name__ == '__main__':
-    ## Hyperparameters
     # Augmentation
     SIDECAM_OFFSET = 0.2
     VALIDATION_SPLIT = 0.4
@@ -173,14 +172,14 @@ if __name__ == '__main__':
     validation_generator = validation_set.generator_func()
 
     # Print a data summary
-    print("\nTraining samples {:>14,}".format(train_set.n_samples))
-    print("Validation samples {:>16,}".format(validation_set.n_samples))
+    print("\nTraining samples {:>12,}".format(train_set.n_samples))
+    print("Validation samples {:>10,}".format(validation_set.n_samples))
 
     # Train keras model
     model = create_model(dropout_rate=DROPOUT, l2_weight=L2_WEIGHT, batch_norm=BATCH_NORM)
     model.summary()
     model.compile(optimizer='adam', loss='mse')
-    early_stopping = EarlyStopping(monitor='val_loss', min_delta=0.01, patience=2)
+    early_stopping = EarlyStopping(monitor='val_loss', min_delta=0, patience=3)
     checkpointer = ModelCheckpoint(filepath='./model_archive/model-{val_loss:.2f}.h5', verbose=1, save_best_only=True)
     losses = model.fit_generator(train_generator,
                                  steps_per_epoch=train_set.n_batches,
