@@ -1,8 +1,10 @@
 import numpy as np
 import tensorflow as tf
 from keras import backend as ktf
-from keras.layers import Lambda, MaxPooling2D, Flatten, Dense, Dropout
+from keras.callbacks import EarlyStopping, ModelCheckpoint
+from keras.layers import Lambda, MaxPooling2D, Flatten, Dense, Dropout, Activation
 from keras.layers.convolutional import Conv2D, Cropping2D
+from keras.layers.normalization import BatchNormalization
 from keras.models import Sequential
 from keras.regularizers import l2
 from matplotlib import pyplot as plt
@@ -97,29 +99,45 @@ def create_model(dropout_rate=0.5, l2_weight=.01):
     model.add(Cropping2D(cropping=((70, 25), (0, 0))))
 
     # VGG inspired structure
-    model.add(Conv2D(64, (5, 5), padding='same', kernel_regularizer=l2(l2_weight), activation='relu'))
+    model.add(Conv2D(64, (5, 5), padding='same', kernel_regularizer=l2(l2_weight)))
+    model.add(BatchNormalization())
+    model.add(Activation('relu'))
     model.add(Dropout(dropout_rate))
     model.add(MaxPooling2D(pool_size=(3, 3)))
-    model.add(Conv2D(128, (5, 5), padding='same', kernel_regularizer=l2(l2_weight), activation='relu'))
+
+    model.add(Conv2D(128, (5, 5), padding='same', kernel_regularizer=l2(l2_weight)))
+    model.add(BatchNormalization())
+    model.add(Activation('relu'))
     model.add(Dropout(dropout_rate))
     model.add(MaxPooling2D(pool_size=(3, 3)))
-    model.add(Conv2D(256, (5, 5), padding='same', kernel_regularizer=l2(l2_weight), activation='relu'))
+
+    model.add(Conv2D(256, (5, 5), padding='same', kernel_regularizer=l2(l2_weight)))
+    model.add(BatchNormalization())
+    model.add(Activation('relu'))
     model.add(Dropout(dropout_rate))
     model.add(MaxPooling2D(pool_size=(3, 3)))
     model.add(Flatten())
-    model.add(Dense(512, kernel_regularizer=l2(l2_weight), activation='relu'))
+
+    model.add(Dense(512, kernel_regularizer=l2(l2_weight)))
+    model.add(BatchNormalization())
+    model.add(Activation('relu'))
     model.add(Dropout(dropout_rate))
-    model.add(Dense(128, kernel_regularizer=l2(l2_weight), activation='relu'))
+
+    model.add(Dense(128, kernel_regularizer=l2(l2_weight)))
+    model.add(BatchNormalization())
+    model.add(Activation('relu'))
     model.add(Dropout(dropout_rate))
+
     model.add(Dense(1))
     return model
 
 
 if __name__ == '__main__':
     # Hyperparameters
-    SIDECAM_OFFSET = 0.1
+    SIDECAM_OFFSET = 0.2
     DROPOUT = 0.5
     L2_WEIGHT = 0.01
+    BATCH_SIZE = 16
 
     # Read in samples
     simulator_samples = read_sim_logs(simulation_logs)
@@ -128,7 +146,6 @@ if __name__ == '__main__':
     samples_train, samples_validation = train_test_split(simulator_samples, test_size=0.3)
 
     # Set up generators
-    BATCH_SIZE = 32
     train_set = VirtualSet(samples_train, batch_size=BATCH_SIZE,
                            augment=True, sidecam_angl_offfset=SIDECAM_OFFSET)
     train_generator = train_set.generator_func()
@@ -143,15 +160,17 @@ if __name__ == '__main__':
     model = create_model(dropout_rate=DROPOUT, l2_weight=L2_WEIGHT)
     model.summary()
     model.compile(optimizer='adam', loss='mse')
+    early_stopping = EarlyStopping(monitor='val_loss', min_delta=0.01, patience=2)
+    checkpointer = ModelCheckpoint(filepath='model.h5', verbose=1, save_best_only=True)
     losses = model.fit_generator(train_generator,
                                  steps_per_epoch=train_set.n_batches,
                                  validation_data=validation_generator,
                                  validation_steps=validation_set.n_batches,
                                  verbose=2,
-                                 epochs=10)
-    model.save('model.h5')
+                                 epochs=10,
+                                 callbacks=[early_stopping, checkpointer])
 
     # Plot loss
     plot_history(losses)
-    plt.ylim([0, 0.15])
+    plt.ylim([0, 0.5])
     plt.show()
