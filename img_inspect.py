@@ -1,7 +1,14 @@
+"""
+Reads simulator CSV data files and plays back the samples as a video, with timestamps for each frame.
+This makes it simple to remove bad segments of driving or trim the beginning and ends of logs.
+
+Depends on `videofig.py` by Bily Lee
+For latest version, go to https://github.com/bilylee/videofig
+"""
 from matplotlib.image import imread
-import csv
-from videofig import videofig
+
 from simulator_reader import read_sim_logs
+from videofig import videofig
 
 raw_csv_logs = ['./data/t2_forward/driving_log.csv']
 

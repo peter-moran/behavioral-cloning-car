@@ -1,3 +1,12 @@
+#! /usr/bin/env python
+# -*- coding: utf-8 -*-
+#
+# Peter Moran
+
+"""
+Trains a Keras model to drive the Udacity SDC-ND driving simulator based on driving data collected from that simulator.
+"""
+
 import numpy as np
 import tensorflow as tf
 from keras import backend as ktf
@@ -14,23 +23,23 @@ from sklearn.utils import shuffle
 
 from simulator_reader import read_sim_logs
 
-# Fix tf bug
+# Set TensorFlow to allow for growth. Helps compatibility.
 ktf.clear_session()
 config = tf.ConfigProto()
 config.gpu_options.allow_growth = True
 session = tf.Session(config=config)
 ktf.set_session(session)
 
-# Options
-simulation_logs = ['./data/t1_forward/driving_log.csv', './data/t2_forward/driving_log.csv',
-                   './data/t1_backwards/driving_log.csv']
-
 
 def plot_history(fit_loss):
+    """
+    Creates a plot for the training and validation loss of a keras history object.
+    :param fit_loss: keras history object
+    """
     plt.plot(fit_loss.history['loss'])
     plt.plot(fit_loss.history['val_loss'])
-    plt.title('model mean squared error loss')
-    plt.ylabel('mean squared error loss')
+    plt.title('Mean Squared Error Loss')
+    plt.ylabel('mean squared error')
     plt.xlabel('epoch')
     plt.legend(['training set', 'validation set'], loc='upper right')
 
@@ -38,41 +47,44 @@ def plot_history(fit_loss):
 class VirtualSet:
     def __init__(self, sample_set, batch_size, augment=False, sidecam_angl_offfset=0.15):
         """
-        Acts as an interface to both real sampled data and augmented data for datasets passed through the network
-        (ie training set, validation set, etc.)
+        Acts as an interface to sample data created by the simulator as well as augmented data, packaging them together
+        as cohesive datasets (ie training set, validation set, etc.) ready for feeding into a neural network.
 
         :param sample_set: A dictionary created by `read_sim_log()` containing file paths to sampled images and
-        simulation measurements. This will be the raw data for the training, validation, or test set.
+        simulation measurements.
         :param batch_size: Number of samples to pass to the network each call to the generator function.
+        :param augment: Set True if you want this set's generator to return augmented data as well as simulator samples.
+        :param sidecam_angl_offfset: Steering angle offset to be applied to simulator samples when using side cameras
+        instead of center cameras. Not used if `augment` is set to False.
         """
         # Handle samples
-        self.raw_samples = sample_set
-        self.n_raw_samples = len(self.raw_samples)
+        self.simulator_samples = sample_set
+        self.n_sim_samples = len(self.simulator_samples)
 
         # Handle augmentation
         self.sidecam_angl_offfset = sidecam_angl_offfset
-        self.n_samples = self.n_raw_samples
+        self.n_total_samples = self.n_sim_samples
         if augment:
-            self.n_samples *= 4
+            self.n_total_samples *= 4
 
         # Batches
         self.batch_size = batch_size
-        self.n_batches = self.n_samples / self.batch_size
+        self.n_batches = self.n_total_samples / self.batch_size
 
     def generator_func(self):
         """
-        Generator used to load images in batches as they are passed to the network, rather than
-        loading them into memory all at once.
-        :return: features and associated labels, ready to be passed to the network.
+        Generator used to load images in batches as they are passed to the network, rather than loading them into
+        memory all at once.
+        :return: A batch of (features, labels) as numpy arrays, ready to be passed to the network.
         """
         while True:
-            arg_shuffle = shuffle(range(self.n_samples))
-            for offset in range(0, self.n_samples, self.batch_size):
+            arg_shuffle = shuffle(range(self.n_total_samples))
+            for offset in range(0, self.n_total_samples, self.batch_size):
                 features = []
                 labels = []
                 for ndx in arg_shuffle[offset:offset + self.batch_size]:
-                    sample = self.raw_samples[ndx % self.n_raw_samples]
-                    case = ndx // self.n_raw_samples
+                    sample = self.simulator_samples[ndx % self.n_sim_samples]
+                    case = ndx // self.n_sim_samples
                     if case == 0:
                         # Use sample as is
                         features.append(imread(sample['img_center']))
@@ -93,6 +105,13 @@ class VirtualSet:
 
 
 def create_model(dropout_rate=None, l2_weight=None, batch_norm=False):
+    """
+    Returns a Keras sequential model with normalization as specified applied.
+    :param dropout_rate: Dropout rate to use on every layer. Set to `None` if you don't want to apply.
+    :param l2_weight: L2 normalization weight to apply all weights. Set to `None` if you don't want to apply.
+    :param batch_norm: Set `True` to apply batch normalization.
+    :return: a Keras sequential model.
+    """
     model = Sequential()
     if l2_weight is None:
         L2_reg = None
@@ -103,7 +122,7 @@ def create_model(dropout_rate=None, l2_weight=None, batch_norm=False):
     model.add(Lambda(lambda x: x / 255.0 - 0.5, input_shape=(160, 320, 3)))
     model.add(Cropping2D(cropping=((70, 25), (0, 0))))
 
-    # VGG inspired structure
+    # Convolution 1
     model.add(Conv2D(64, (5, 5), padding='same', kernel_regularizer=L2_reg))
     if batch_norm:
         model.add(BatchNormalization())
@@ -112,6 +131,7 @@ def create_model(dropout_rate=None, l2_weight=None, batch_norm=False):
         model.add(Dropout(dropout_rate))
     model.add(MaxPooling2D(pool_size=(3, 3)))
 
+    # Convolution 2
     model.add(Conv2D(128, (5, 5), padding='same', kernel_regularizer=L2_reg))
     if batch_norm:
         model.add(BatchNormalization())
@@ -120,6 +140,7 @@ def create_model(dropout_rate=None, l2_weight=None, batch_norm=False):
         model.add(Dropout(dropout_rate))
     model.add(MaxPooling2D(pool_size=(3, 3)))
 
+    # Convolution 3
     model.add(Conv2D(256, (5, 5), padding='same', kernel_regularizer=L2_reg))
     if batch_norm:
         model.add(BatchNormalization())
@@ -129,6 +150,7 @@ def create_model(dropout_rate=None, l2_weight=None, batch_norm=False):
     model.add(MaxPooling2D(pool_size=(3, 3)))
     model.add(Flatten())
 
+    # Fully Connected 1
     model.add(Dense(512, kernel_regularizer=L2_reg))
     if batch_norm:
         model.add(BatchNormalization())
@@ -136,6 +158,7 @@ def create_model(dropout_rate=None, l2_weight=None, batch_norm=False):
     if dropout_rate is not None:
         model.add(Dropout(dropout_rate))
 
+    # Fully Connected 2
     model.add(Dense(128, kernel_regularizer=L2_reg))
     if batch_norm:
         model.add(BatchNormalization())
@@ -143,7 +166,9 @@ def create_model(dropout_rate=None, l2_weight=None, batch_norm=False):
     if dropout_rate is not None:
         model.add(Dropout(dropout_rate))
 
+    # Output layer
     model.add(Dense(1))
+
     return model
 
 
@@ -159,6 +184,8 @@ if __name__ == '__main__':
     BATCH_SIZE = 32
 
     # Read in samples
+    simulation_logs = ['./data/t1_forward/driving_log.csv', './data/t2_forward/driving_log.csv',
+                       './data/t1_backwards/driving_log.csv']
     simulator_samples = read_sim_logs(simulation_logs)
 
     # Split samples into train / test sets
@@ -172,14 +199,16 @@ if __name__ == '__main__':
     validation_generator = validation_set.generator_func()
 
     # Print a data summary
-    print("\nTraining samples {:>12,}".format(train_set.n_samples))
-    print("Validation samples {:>10,}".format(validation_set.n_samples))
+    print("\nTraining samples {:>12,}".format(train_set.n_total_samples))
+    print("Validation samples {:>10,}".format(validation_set.n_total_samples))
 
-    # Train keras model
+    # Set up keras model
     model = create_model(dropout_rate=DROPOUT, l2_weight=L2_WEIGHT, batch_norm=BATCH_NORM)
     model.summary()
     model.compile(optimizer='adam', loss='mse')
-    early_stopping = EarlyStopping(monitor='val_loss', min_delta=0, patience=3)
+
+    # Train Keras model, saving the model whenever improvements are made and stopping if loss does not improve.
+    early_stopping = EarlyStopping(monitor='val_loss', min_delta=0.0, patience=3)
     checkpointer = ModelCheckpoint(filepath='./model_archive/model-{val_loss:.2f}.h5', verbose=1, save_best_only=True)
     losses = model.fit_generator(train_generator,
                                  steps_per_epoch=train_set.n_batches,
