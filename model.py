@@ -174,7 +174,7 @@ def create_model(dropout_rate=None, l2_weight=None, batch_norm=False):
 
 if __name__ == '__main__':
     # Augmentation
-    SIDECAM_OFFSET = 0.2
+    SIDECAM_OFFSET = 0.1
     VALIDATION_SPLIT = 0.4
     # Model
     DROPOUT = None
