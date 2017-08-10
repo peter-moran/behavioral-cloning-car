@@ -24,7 +24,7 @@ from matplotlib.image import imread
 from sklearn.model_selection import train_test_split
 from sklearn.utils import shuffle
 
-from simulator_reader import read_sim_logs
+from simulator_reader import read_sim_logs, probabilistic_drop, force_gaussian
 
 # Set TensorFlow to allow for growth. Helps compatibility.
 ktf.clear_session()
@@ -130,7 +130,7 @@ def create_model(dropout_rate=None, l2_weight=None, batch_norm=False):
     model.add(Conv2D(64, kernel_size, padding='same', kernel_regularizer=L2_reg))
     if batch_norm:
         model.add(BatchNormalization())
-    model.add(Activation('relu'))
+    model.add(Activation('elu'))
     if dropout_rate is not None:
         model.add(Dropout(dropout_rate))
     model.add(MaxPooling2D(pool_size=(3, 3)))
@@ -139,7 +139,7 @@ def create_model(dropout_rate=None, l2_weight=None, batch_norm=False):
     model.add(Conv2D(128, kernel_size, padding='same', kernel_regularizer=L2_reg))
     if batch_norm:
         model.add(BatchNormalization())
-    model.add(Activation('relu'))
+    model.add(Activation('elu'))
     if dropout_rate is not None:
         model.add(Dropout(dropout_rate))
     model.add(MaxPooling2D(pool_size=(3, 3)))
@@ -148,7 +148,7 @@ def create_model(dropout_rate=None, l2_weight=None, batch_norm=False):
     model.add(Conv2D(256, kernel_size, padding='same', kernel_regularizer=L2_reg))
     if batch_norm:
         model.add(BatchNormalization())
-    model.add(Activation('relu'))
+    model.add(Activation('elu'))
     if dropout_rate is not None:
         model.add(Dropout(dropout_rate))
     model.add(MaxPooling2D(pool_size=(3, 3)))
@@ -158,7 +158,7 @@ def create_model(dropout_rate=None, l2_weight=None, batch_norm=False):
     model.add(Dense(512, kernel_regularizer=L2_reg))
     if batch_norm:
         model.add(BatchNormalization())
-    model.add(Activation('relu'))
+    model.add(Activation('elu'))
     if dropout_rate is not None:
         model.add(Dropout(dropout_rate))
 
@@ -166,7 +166,7 @@ def create_model(dropout_rate=None, l2_weight=None, batch_norm=False):
     model.add(Dense(128, kernel_regularizer=L2_reg))
     if batch_norm:
         model.add(BatchNormalization())
-    model.add(Activation('relu'))
+    model.add(Activation('elu'))
     if dropout_rate is not None:
         model.add(Dropout(dropout_rate))
 
@@ -178,21 +178,26 @@ def create_model(dropout_rate=None, l2_weight=None, batch_norm=False):
 
 if __name__ == '__main__':
     # Augmentation
-    SIDECAM_OFFSET = 0.1
+    SIDECAM_OFFSET = 0.15
     VALIDATION_SPLIT = 0.4
     # Model
     DROPOUT = None
     L2_WEIGHT = None
     BATCH_NORM = False
     # Testing
-    BATCH_SIZE = 32
+    BATCH_SIZE = 40
 
     # Read in samples
-    simulation_logs = ['./data/t1_backwards/driving_log.csv']
-    simulator_samples = read_sim_logs(simulation_logs)
+    simulation_logs = ['./data/t1_forward/driving_log.csv', './data/t2_forward/driving_log.csv',
+                       './data/t1_backwards/driving_log.csv']
+    samples = read_sim_logs(simulation_logs)
+
+    # Remove a lot of zero angles
+    samples = probabilistic_drop(samples, center=0, drop_rate=.70)
+    samples = force_gaussian(samples)
 
     # Split samples into train / test sets
-    samples_train, samples_validation = train_test_split(simulator_samples, test_size=VALIDATION_SPLIT)
+    samples_train, samples_validation = train_test_split(samples, test_size=VALIDATION_SPLIT)
 
     # Set up generators
     train_set = VirtualSet(samples_train, batch_size=BATCH_SIZE,
@@ -211,14 +216,14 @@ if __name__ == '__main__':
     model.compile(optimizer='adam', loss='mse')
 
     # Train Keras model, saving the model whenever improvements are made and stopping if loss does not improve.
-    early_stopping = EarlyStopping(monitor='val_loss', min_delta=0.0, patience=3)
+    early_stopping = EarlyStopping(monitor='val_loss', min_delta=0.0, patience=2)
     checkpointer = ModelCheckpoint(filepath='./model_archive/model-{val_loss:.5f}.h5', verbose=1, save_best_only=True)
     losses = model.fit_generator(train_generator,
                                  steps_per_epoch=train_set.n_batches,
                                  validation_data=validation_generator,
                                  validation_steps=validation_set.n_batches,
-                                 verbose=2,
-                                 epochs=10,
+                                 verbose=1,
+                                 epochs=50,
                                  callbacks=[early_stopping, checkpointer])
 
     # Plot loss

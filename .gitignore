@@ -5,4 +5,5 @@ __pycache__/
 data/**/IMG/
 model_archive/**
 run1/
+run2/
 /videofig.py
