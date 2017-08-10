@@ -9,6 +9,7 @@ Trains a Keras model to drive the Udacity SDC-ND driving simulator based on driv
 Usage:
     `python model.py`
 """
+import random
 
 import numpy as np
 import tensorflow as tf
@@ -24,7 +25,7 @@ from matplotlib.image import imread
 from sklearn.model_selection import train_test_split
 from sklearn.utils import shuffle
 
-from simulator_reader import read_sim_logs, probabilistic_drop, force_gaussian
+from simulator_reader import read_sim_logs, probabilistic_drop
 
 # Set TensorFlow to allow for growth. Helps compatibility.
 ktf.clear_session()
@@ -48,7 +49,7 @@ def plot_history(fit_loss):
 
 
 class VirtualSet:
-    def __init__(self, sample_set, batch_size, augment=False, sidecam_angl_offfset=0.15):
+    def __init__(self, sample_set, batch_size, augment=False, sidecam_offfset=0.15):
         """
         Acts as an interface to sample data created by the simulator as well as augmented data, packaging them together
         as cohesive datasets (ie training set, validation set, etc.) ready for feeding into a neural network.
@@ -57,22 +58,45 @@ class VirtualSet:
         simulation measurements.
         :param batch_size: Number of samples to pass to the network each call to the generator function.
         :param augment: Set True if you want this set's generator to return augmented data as well as simulator samples.
-        :param sidecam_angl_offfset: Steering angle offset to be applied to simulator samples when using side cameras
+        :param sidecam_offfset: Steering angle offset to be applied to simulator samples when using side cameras
         instead of center cameras. Not used if `augment` is set to False.
         """
         # Handle samples
-        self.simulator_samples = sample_set
-        self.n_sim_samples = len(self.simulator_samples)
+        self.raw_samples = sample_set
+        self.n_sim_samples = len(self.raw_samples)
 
         # Handle augmentation
-        self.sidecam_angl_offfset = sidecam_angl_offfset
+        self.augment = augment
+        self.sidecam_offfset = sidecam_offfset
         self.n_total_samples = self.n_sim_samples
         if augment:
-            self.n_total_samples *= 4
+            self.n_total_samples *= 3
 
         # Batches
         self.batch_size = batch_size
         self.n_batches = self.n_total_samples / self.batch_size
+
+    def show_angle_distribution(self):
+        angles = [s['angle'] for s in self.raw_samples]
+        if self.augment:
+            # Account for augmentations
+            for angl in np.copy(angles):
+                angles.append(angl * -1)
+                rand = random.randint(0, 1)
+                if rand == 0:
+                    angles.append(angl + self.sidecam_offfset)
+                if rand == 1:
+                    angles.append(angl - self.sidecam_offfset)
+
+        plt.subplot(2, 1, 1)
+        plt.title('Raw Sample Distribution')
+        plt.xlim([-1.5, 1.5])
+        n, bins, patches = plt.hist([s['angle'] for s in self.raw_samples], bins='auto')
+        plt.subplot(2, 1, 2)
+        plt.title('Distribution after Augmentation')
+        plt.xlim([-1.5, 1.5])
+        n, bins, patches = plt.hist(angles, bins='auto')
+        plt.show()
 
     def generator_func(self):
         """
@@ -86,7 +110,7 @@ class VirtualSet:
                 features = []
                 labels = []
                 for ndx in arg_shuffle[offset:offset + self.batch_size]:
-                    sample = self.simulator_samples[ndx % self.n_sim_samples]
+                    sample = self.raw_samples[ndx % self.n_sim_samples]
                     case = ndx // self.n_sim_samples
                     if case == 0:
                         # Use sample as is
@@ -97,15 +121,16 @@ class VirtualSet:
                         features.append(np.fliplr(imread(sample['img_center'])))
                         labels.append(-sample['angle'])
                     elif case == 2:
-                        # Augment with left camera, correcting to right
-                        features.append(imread(sample['img_left']))
-                        labels.append(sample['angle'] + self.sidecam_angl_offfset)
-                    elif case == 3:
-                        # Augment with right camera, correcting to left
-                        features.append(imread(sample['img_right']))
-                        labels.append(sample['angle'] - self.sidecam_angl_offfset)
+                        choice = random.randint(0, 1)
+                        if choice == 0:
+                            # Augment with left camera, correcting to right
+                            features.append(imread(sample['img_left']))
+                            labels.append(sample['angle'] + self.sidecam_offfset)
+                        if choice == 1:
+                            # Augment with right camera, correcting to left
+                            features.append(imread(sample['img_right']))
+                            labels.append(sample['angle'] - self.sidecam_offfset)
                 yield np.array(features), np.array(labels)
-
 
 def create_model(dropout_rate=None, l2_weight=None, batch_norm=False):
     """
@@ -163,7 +188,7 @@ def create_model(dropout_rate=None, l2_weight=None, batch_norm=False):
         model.add(Dropout(dropout_rate))
 
     # Fully Connected 2
-    model.add(Dense(128, kernel_regularizer=L2_reg))
+    model.add(Dense(256, kernel_regularizer=L2_reg))
     if batch_norm:
         model.add(BatchNormalization())
     model.add(Activation('elu'))
@@ -178,32 +203,33 @@ def create_model(dropout_rate=None, l2_weight=None, batch_norm=False):
 
 if __name__ == '__main__':
     # Augmentation
-    SIDECAM_OFFSET = 0.15
+    SIDECAM_OFFSET = 0.1
     VALIDATION_SPLIT = 0.4
     # Model
     DROPOUT = None
     L2_WEIGHT = None
     BATCH_NORM = False
     # Testing
-    BATCH_SIZE = 40
+    BATCH_SIZE = 32
 
     # Read in samples
-    simulation_logs = ['./data/t1_forward/driving_log.csv', './data/t2_forward/driving_log.csv',
-                       './data/t1_backwards/driving_log.csv']
+    simulation_logs = ['./data/t1_forward/driving_log.csv', './data/t1_backwards/driving_log.csv',
+                       './data/t2_forward/driving_log.csv', './data/t2_backwards/driving_log.csv']
     samples = read_sim_logs(simulation_logs)
 
     # Remove a lot of zero angles
-    samples = probabilistic_drop(samples, center=0, drop_rate=.70)
-    samples = force_gaussian(samples)
+    samples = probabilistic_drop(samples, center=0.0, margin=0.02, drop_rate=.60)
 
     # Split samples into train / test sets
     samples_train, samples_validation = train_test_split(samples, test_size=VALIDATION_SPLIT)
 
     # Set up generators
     train_set = VirtualSet(samples_train, batch_size=BATCH_SIZE,
-                           augment=True, sidecam_angl_offfset=SIDECAM_OFFSET)
+                           augment=True, sidecam_offfset=SIDECAM_OFFSET)
+    train_set.show_angle_distribution()
     train_generator = train_set.generator_func()
-    validation_set = VirtualSet(samples_validation, batch_size=BATCH_SIZE)
+    validation_set = VirtualSet(samples_validation, batch_size=BATCH_SIZE,
+                                augment=True, sidecam_offfset=SIDECAM_OFFSET)
     validation_generator = validation_set.generator_func()
 
     # Print a data summary
