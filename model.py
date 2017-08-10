@@ -5,6 +5,9 @@
 
 """
 Trains a Keras model to drive the Udacity SDC-ND driving simulator based on driving data collected from that simulator.
+
+Usage:
+    `python model.py`
 """
 
 import numpy as np
@@ -123,7 +126,8 @@ def create_model(dropout_rate=None, l2_weight=None, batch_norm=False):
     model.add(Cropping2D(cropping=((70, 25), (0, 0))))
 
     # Convolution 1
-    model.add(Conv2D(64, (5, 5), padding='same', kernel_regularizer=L2_reg))
+    kernel_size = (5, 5)
+    model.add(Conv2D(64, kernel_size, padding='same', kernel_regularizer=L2_reg))
     if batch_norm:
         model.add(BatchNormalization())
     model.add(Activation('relu'))
@@ -132,7 +136,7 @@ def create_model(dropout_rate=None, l2_weight=None, batch_norm=False):
     model.add(MaxPooling2D(pool_size=(3, 3)))
 
     # Convolution 2
-    model.add(Conv2D(128, (5, 5), padding='same', kernel_regularizer=L2_reg))
+    model.add(Conv2D(128, kernel_size, padding='same', kernel_regularizer=L2_reg))
     if batch_norm:
         model.add(BatchNormalization())
     model.add(Activation('relu'))
@@ -141,7 +145,7 @@ def create_model(dropout_rate=None, l2_weight=None, batch_norm=False):
     model.add(MaxPooling2D(pool_size=(3, 3)))
 
     # Convolution 3
-    model.add(Conv2D(256, (5, 5), padding='same', kernel_regularizer=L2_reg))
+    model.add(Conv2D(256, kernel_size, padding='same', kernel_regularizer=L2_reg))
     if batch_norm:
         model.add(BatchNormalization())
     model.add(Activation('relu'))
@@ -184,8 +188,7 @@ if __name__ == '__main__':
     BATCH_SIZE = 32
 
     # Read in samples
-    simulation_logs = ['./data/t1_forward/driving_log.csv', './data/t2_forward/driving_log.csv',
-                       './data/t1_backwards/driving_log.csv']
+    simulation_logs = ['./data/t1_backwards/driving_log.csv']
     simulator_samples = read_sim_logs(simulation_logs)
 
     # Split samples into train / test sets
@@ -209,7 +212,7 @@ if __name__ == '__main__':
 
     # Train Keras model, saving the model whenever improvements are made and stopping if loss does not improve.
     early_stopping = EarlyStopping(monitor='val_loss', min_delta=0.0, patience=3)
-    checkpointer = ModelCheckpoint(filepath='./model_archive/model-{val_loss:.2f}.h5', verbose=1, save_best_only=True)
+    checkpointer = ModelCheckpoint(filepath='./model_archive/model-{val_loss:.5f}.h5', verbose=1, save_best_only=True)
     losses = model.fit_generator(train_generator,
                                  steps_per_epoch=train_set.n_batches,
                                  validation_data=validation_generator,

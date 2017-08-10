@@ -1,6 +1,13 @@
-from moviepy.editor import ImageSequenceClip
 import argparse
 
+from moviepy.editor import ImageSequenceClip
+
+"""Generates a video (`.mp4`) from a folder of sequential images.
+
+Usage:
+    `python video.py image_folder`
+
+"""
 
 def main():
     parser = argparse.ArgumentParser(description='Create driving video.')

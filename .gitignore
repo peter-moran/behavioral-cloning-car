@@ -1,1 +1,8 @@
 windows_sim/
+publishing/
+.idea/
+__pycache__/
+data/**/IMG/
+model_archive/**
+run1/
+/videofig.py

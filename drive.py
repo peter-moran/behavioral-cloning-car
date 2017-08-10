@@ -1,29 +1,37 @@
 import argparse
 import base64
-from datetime import datetime
 import os
 import shutil
+from datetime import datetime
+from io import BytesIO
 
+import eventlet.wsgi
+import h5py
 import numpy as np
 import socketio
-import eventlet
-import eventlet.wsgi
+import tensorflow as tf
 from PIL import Image
 from flask import Flask
-from io import BytesIO
-import tensorflow as tf
-
-from keras.models import load_model
-import h5py
 from keras import __version__ as keras_version
-
 # Fix tf bug
 from keras import backend as K
+from keras.models import load_model
+
 K.clear_session()
 config = tf.ConfigProto()
 config.gpu_options.allow_growth = True
 session = tf.Session(config=config)
 K.set_session(session)
+
+"""Commands the vehicle simulator to drive autonomously based on a given keras model.
+
+Usage:
+    Use `model.h5` to drive in autonomous mode
+        `python drive.py model.h5`
+    
+    Or, use `model.h5` to drive in autonomous mode, and save dashcam photos of the run to `./run1/`
+        `python drive.py model.h5 run1`
+"""
 
 sio = socketio.Server()
 app = Flask(__name__)
@@ -52,6 +60,8 @@ class SimplePIController:
 
 
 controller = SimplePIController(0.1, 0.002)
+
+# Force desired driving speed.
 set_speed = 30
 controller.set_desired(set_speed)
 
