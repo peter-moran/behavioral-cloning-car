@@ -10,6 +10,7 @@ Usage:
     `python model.py`
 """
 import random
+from math import ceil
 
 import numpy as np
 import tensorflow as tf
@@ -49,7 +50,7 @@ def plot_history(fit_loss):
 
 
 class VirtualSet:
-    def __init__(self, sample_set, batch_size, augment=False, sidecam_offfset=0.15):
+    def __init__(self, sample_set, batch_size, augment, flip_ratio=0.0, sidecam_ratio=0.0, sidecam_offset=0.0):
         """
         Acts as an interface to sample data created by the simulator as well as augmented data, packaging them together
         as cohesive datasets (ie training set, validation set, etc.) ready for feeding into a neural network.
@@ -57,80 +58,100 @@ class VirtualSet:
         :param sample_set: A dictionary created by `read_sim_log()` containing file paths to sampled images and
         simulation measurements.
         :param batch_size: Number of samples to pass to the network each call to the generator function.
-        :param augment: Set True if you want this set's generator to return augmented data as well as simulator samples.
-        :param sidecam_offfset: Steering angle offset to be applied to simulator samples when using side cameras
-        instead of center cameras. Not used if `augment` is set to False.
+        :param augment: Set True to allow data augmentation.
+        :param flip_ratio: The ratio of flipped images to add to the dataset. Eg `flip_ratio=0.5` would add a flipped
+        copy of half the images to the dataset. Typically ranges [0.0, 1.0].
+        :param sidecam_ratio: The ratio of sidecam images to add to the dataset. Typically ranges [0.0, 2.0].
+        :param sidecam_offset: Steering angle offset to be applied to simulator samples when using side cameras
+        instead of center cameras. Not used if `isAugmented` is set to False.
         """
         # Handle samples
         self.raw_samples = sample_set
-        self.n_sim_samples = len(self.raw_samples)
+        self.n_raw_samples = len(self.raw_samples)
 
         # Handle augmentation
-        self.augment = augment
-        self.sidecam_offfset = sidecam_offfset
-        self.n_total_samples = self.n_sim_samples
-        if augment:
-            self.n_total_samples *= 3
+        self.isAugmented = augment
+        if not self.isAugmented:
+            assert flip_ratio == 0 and sidecam_ratio == 0 and sidecam_offset == 0, 'Not allowed without augmentation'
+        self.n_flips = int(self.n_raw_samples * flip_ratio)
+        self.n_sidecam = int(self.n_raw_samples * sidecam_ratio)
+        self.sidecam_offset = sidecam_offset
+        self.n_total_samples = self.n_raw_samples + self.n_sidecam + self.n_flips
 
         # Batches
         self.batch_size = batch_size
-        self.n_batches = self.n_total_samples / self.batch_size
+        self.n_batches = int(ceil(self.n_total_samples / self.batch_size))
 
-    def show_angle_distribution(self):
-        angles = [s['angle'] for s in self.raw_samples]
-        if self.augment:
-            # Account for augmentations
-            for angl in np.copy(angles):
-                angles.append(angl * -1)
-                rand = random.randint(0, 1)
-                if rand == 0:
-                    angles.append(angl + self.sidecam_offfset)
-                if rand == 1:
-                    angles.append(angl - self.sidecam_offfset)
-
-        plt.subplot(2, 1, 1)
-        plt.title('Raw Sample Distribution')
-        plt.xlim([-1.5, 1.5])
-        n, bins, patches = plt.hist([s['angle'] for s in self.raw_samples], bins='auto')
-        plt.subplot(2, 1, 2)
-        plt.title('Distribution after Augmentation')
-        plt.xlim([-1.5, 1.5])
-        n, bins, patches = plt.hist(angles, bins='auto')
-        plt.show()
-
-    def generator_func(self):
+    def batch_generator(self, simulate_labels=False):
         """
         Generator used to load images in batches as they are passed to the network, rather than loading them into
         memory all at once.
+        :param simulate_labels: Set True to avoid loading images and only fill labels. Used for diagnostic purposes.
         :return: A batch of (features, labels) as numpy arrays, ready to be passed to the network.
         """
+        # Store sample indices and image generation requests together
+        FLIP_ID = -1  # request to generate a flipped image
+        SIDE_ID = -2  # request to use a side camera image
+        sample_map = list(range(self.n_raw_samples)) + [FLIP_ID] * self.n_flips + [
+                                                                                      SIDE_ID] * self.n_sidecam  # TODO: Use more memory efficient mothod.
+
         while True:
-            arg_shuffle = shuffle(range(self.n_total_samples))
-            for offset in range(0, self.n_total_samples, self.batch_size):
-                features = []
-                labels = []
-                for ndx in arg_shuffle[offset:offset + self.batch_size]:
-                    sample = self.raw_samples[ndx % self.n_sim_samples]
-                    case = ndx // self.n_sim_samples
-                    if case == 0:
-                        # Use sample as is
-                        features.append(imread(sample['img_center']))
-                        labels.append(sample['angle'])
-                    elif case == 1:
-                        # Augment sample with reflection
-                        features.append(np.fliplr(imread(sample['img_center'])))
-                        labels.append(-sample['angle'])
-                    elif case == 2:
-                        choice = random.randint(0, 1)
-                        if choice == 0:
-                            # Augment with left camera, correcting to right
-                            features.append(imread(sample['img_left']))
-                            labels.append(sample['angle'] + self.sidecam_offfset)
-                        if choice == 1:
-                            # Augment with right camera, correcting to left
-                            features.append(imread(sample['img_right']))
-                            labels.append(sample['angle'] - self.sidecam_offfset)
-                yield np.array(features), np.array(labels)
+            sample_map = shuffle(sample_map)
+            for batch_start in range(0, len(sample_map), self.batch_size):
+                features_batch = []
+                labels_batch = []
+                for id in sample_map[batch_start:batch_start + self.batch_size]:
+                    if id >= 0:
+                        # id refers to a raw image
+                        sample = self.raw_samples[id]
+                        f_img = sample['img_center']
+                        image = imread(f_img) if not simulate_labels else f_img
+                        angle = sample['angle']
+                    else:
+                        # Augment a random sample
+                        sample = self.raw_samples[random.randint(0, self.n_raw_samples - 1)]
+                        if id == FLIP_ID:
+                            # Augment with reflection
+                            f_img = sample['img_center']
+                            image = np.fliplr(imread(f_img)) if not simulate_labels else f_img
+                            angle = -sample['angle']
+                        elif id == SIDE_ID:
+                            # Augment with one side image
+                            side = random.randint(0, 1)
+                            if side == 0:
+                                # Augment with left camera
+                                f_img = sample['img_left']
+                                image = imread(f_img) if not simulate_labels else f_img
+                                angle = sample['angle'] + self.sidecam_offset
+                            elif side == 1:
+                                # Augment with right camera
+                                f_img = sample['img_right']
+                                image = imread(f_img) if not simulate_labels else f_img
+                                angle = sample['angle'] - self.sidecam_offset
+                    features_batch.append(image)
+                    labels_batch.append(angle)
+                yield np.array(features_batch), np.array(labels_batch)
+
+    def simulate_angle_distribution(self):
+        # Run generator for all samples
+        batch_generator = self.batch_generator(simulate_labels=True)
+        angles = []
+        for n_batch in range(self.n_batches):
+            features, labels = next(batch_generator)
+            angles += list(labels)
+
+        # Plot
+        plt.subplot(2, 1, 1)
+        plt.title('Raw Sample Distribution')
+        plt.hist([s['angle'] for s in self.raw_samples], bins='auto')
+        plt.xlim([-1.5, 1.5])
+        plt.subplot(2, 1, 2)
+        plt.title('Distribution after Augmentation (Representative)')
+        plt.hist(angles, bins='auto')
+        plt.xlim([-1.5, 1.5])
+        plt.show()
+        return angles
+
 
 def create_model(dropout_rate=None, l2_weight=None, batch_norm=False):
     """
@@ -218,19 +239,20 @@ if __name__ == '__main__':
     samples = read_sim_logs(simulation_logs)
 
     # Remove a lot of zero angles
-    samples = probabilistic_drop(samples, center=0.0, margin=0.02, drop_rate=.60)
+    samples = probabilistic_drop(samples, key='angle', drop_rate=.80, center=0.0, margin=0.0)
 
     # Split samples into train / test sets
     samples_train, samples_validation = train_test_split(samples, test_size=VALIDATION_SPLIT)
 
-    # Set up generators
+    # Create datasets
     train_set = VirtualSet(samples_train, batch_size=BATCH_SIZE,
-                           augment=True, sidecam_offfset=SIDECAM_OFFSET)
-    train_set.show_angle_distribution()
-    train_generator = train_set.generator_func()
-    validation_set = VirtualSet(samples_validation, batch_size=BATCH_SIZE,
-                                augment=True, sidecam_offfset=SIDECAM_OFFSET)
-    validation_generator = validation_set.generator_func()
+                           augment=True, flip_ratio=1.0, sidecam_ratio=2.0, sidecam_offset=SIDECAM_OFFSET)
+    validation_set = VirtualSet(samples_validation, batch_size=BATCH_SIZE, augment=False)
+    train_set.simulate_angle_distribution()
+
+    # Define generators
+    train_generator = train_set.batch_generator()
+    validation_generator = validation_set.batch_generator()
 
     # Print a data summary
     print("\nTraining samples {:>12,}".format(train_set.n_total_samples))

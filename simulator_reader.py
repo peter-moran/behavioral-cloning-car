@@ -24,13 +24,15 @@ def read_sim_logs(csv_paths):
     return loaded_data
 
 
-def probabilistic_drop(samples, center, drop_rate, margin=0.01):
+def probabilistic_drop(samples, key, drop_rate, center, margin=0.01):
+    """
+    Removes random selection of entries in `samples` for every entry where the value stored at `key` is within a margin of center.
+    Ex: To remove 60% of samples that have an angle within 0.1 of zero
+        probabilistic_drop(samples, 'angle', 0.6, 0.0, 0.1)
+    :return:
+    """
+    assert drop_rate >= 0 and drop_rate <= 1.0, 'drop rate must be a fraction'
+    assert margin >= 0, 'margin must be non-negative'
     drop_rate = int(drop_rate * 1000)
     return [sample for sample in samples if
-            sample['angle'] > center + margin or sample['angle'] < center - margin or random.randint(0,
-                                                                                                     1000) >= drop_rate]
-
-if __name__ == '__main__':
-    # Load
-    samples = read_sim_logs(['./data/t1_forward/driving_log.csv', './data/t1_backwards/driving_log.csv',
-                             './data/t2_forward/driving_log.csv'])
+            sample[key] > center + margin or sample[key] < center - margin or random.randint(0, 1000) >= drop_rate]
