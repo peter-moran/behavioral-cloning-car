@@ -1,13 +1,8 @@
-# Where are the images?
+# Where is the data?
 
-The images are found in the `driving_log_images.zip` folder. Unzip it and drop the
-files here.
+The images were too large to be stored on github easily, so they had to be removed from the
+entire git history. A good working set of data can be found [here](https://www.dropbox.com/s/sblcwj3w47t5hc1/end-to-end-learning-sdc-data.zip?dl=0).
 
-# Why?
+# Can I make my own images
 
-To prevent having to track many image files, the `run_name/IMG` folders
-are not tracked. Instead, we keep all the images in the `driving_log_images.zip`
-folder and update the content here if any new images are added.
-
-Since it is helpful to track what images _are_ used or removed, the
-`run_name/driving_log.csv` files _are_ tracked in git.
+Yes. Check out the instructions for the [Udacity Self-Driving Car Simulator](https://github.com/udacity/self-driving-car-sim).

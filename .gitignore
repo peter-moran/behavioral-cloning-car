@@ -1,9 +1,16 @@
-windows_sim/
-publishing/
 .idea/
 __pycache__/
-data/**/IMG/
-model_archive/**
+
+# Hide supporting materials
+windows_sim/
+data/**
+publishing/
+!data/readme.md
 run1/
 run2/
 /videofig.py
+
+# Only track the best model
+/**.h5
+model_archive/**
+!/model.h5
