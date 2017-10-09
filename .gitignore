@@ -3,7 +3,7 @@ __pycache__/
 
 # Hide supporting materials
 windows_sim/
-data/**
+data/**/IMG
 publishing/
 !data/readme.md
 run1/
