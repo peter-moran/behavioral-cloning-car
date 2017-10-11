@@ -14,3 +14,4 @@ run2/
 /**.h5
 model_archive/**
 !/model.h5
+!/model-2.h5

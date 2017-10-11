@@ -12,9 +12,8 @@ import socketio
 import tensorflow as tf
 from PIL import Image
 from flask import Flask
-from keras import __version__ as keras_version
 # Fix tf bug
-from keras import backend as K
+from keras import __version__ as keras_version, backend as K
 from keras.models import load_model
 
 K.clear_session()
@@ -62,7 +61,7 @@ class SimplePIController:
 controller = SimplePIController(0.1, 0.002)
 
 # Force desired driving speed.
-set_speed = 30
+set_speed = 25
 controller.set_desired(set_speed)
 
 

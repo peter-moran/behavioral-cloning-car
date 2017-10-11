@@ -44,12 +44,12 @@ def plot_history(fit_loss):
 if __name__ == '__main__':
     #### HYPER PARAMETERS ####
     # Sample selection
-    zero_angle_drop = .80  # fraction of samples with an angle of zero to drop
+    zero_angle_drop = .65  # fraction of samples with an angle of zero to drop
 
     # Augmentation
     flip_ratio = 1.0  # ratio of raw samples to generate mirrored samples from
     sidecam_ratio = 2.0  # ratio of raw samples to use side cameras from
-    sidecam_offset = 0.1  # steering offset used for side cameras
+    sidecam_offset = 0.13  # steering offset used for side cameras
 
     # Model
     dropout_rate = None  # dropout rate
@@ -63,7 +63,7 @@ if __name__ == '__main__':
 
     # Read in samples
     simulation_logs = ['./data/t1_forward/driving_log.csv', './data/t1_backwards/driving_log.csv',
-                       './data/t2_forward/driving_log.csv', './data/t2_backwards/driving_log.csv']
+                       './data/t2_forward/driving_log.csv']
     samples = read_sim_logs(simulation_logs)
 
     # Remove some of the zero angle samples
