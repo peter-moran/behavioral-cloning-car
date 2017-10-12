@@ -1,3 +1,7 @@
+"""
+Definition of the model used by `train.py`.
+"""
+
 from keras.layers import Activation, BatchNormalization, Conv2D, Cropping2D, Dense, Dropout, Flatten, Lambda, \
     MaxPooling2D
 from keras.models import Sequential

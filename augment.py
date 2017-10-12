@@ -1,3 +1,8 @@
+"""
+Helper functions used by `train.py` to augment the raw dataset with additional driving examples.
+"""
+
+
 import random
 from math import ceil
 
