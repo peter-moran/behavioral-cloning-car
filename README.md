@@ -36,7 +36,7 @@ Rather than just using the raw samples recorded from human driving, we augment t
 
 However, the most important form of augmentation is using cameras from the side of the car with a modified course-correcting angle. Specifically, the view from the side of the car *is treated as if it was the center of the car*. This means it is showing a view of the car too far to the left or right according to our human driver. Thus, we modify the steering angle to drive us back towards the center of the road. This allows the neural network needs to learn how to recover from disturbances. Without this, the neural network will often not turn enough around corners and simply drive straight off the track.
 
-| ![left_2017_07_24_10_59_13_457](data/t1_forward/IMG/left_2017_07_24_10_59_13_457.jpg) | ![center_2017_07_24_10_59_13_457](data/t1_forward/IMG/center_2017_07_24_10_59_13_457.jpg) | ![right_2017_07_24_10_59_13_457](data/t1_forward/IMG/right_2017_07_24_10_59_13_457.jpg) |
+| ![left_2017_07_24_10_59_13_457](data/doc_imgs/left.jpg) | ![center_2017_07_24_10_59_13_457](data/doc_imgs/center.jpg) | ![right_2017_07_24_10_59_13_457](data/doc_imgs/right.jpg) |
 | ---------------------------------------- | ---------------------------------------- | ---------------------------------------- |
 | **Left**                                 | **Center**                               | **Right**                                |
 
